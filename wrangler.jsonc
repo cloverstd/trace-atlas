@@ -13,15 +13,12 @@
   "observability": {
     "enabled": true,
   },
-  "vars": {
-    "APP_ORIGIN": "https://atlas.example.com",
-    "RP_ID": "atlas.example.com",
-  },
+  // Preserve runtime plain-text vars (APP_ORIGIN, RP_ID) managed in Cloudflare Dashboard.
+  "keep_vars": true,
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "trace-atlas",
-      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations",
     },
   ],

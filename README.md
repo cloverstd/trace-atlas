@@ -38,7 +38,11 @@ curl 'http://localhost:5173/cdn-cgi/local/scheduled?format=json'
 
 ## 部署到 Cloudflare
 
-1. 登录 Cloudflare 并创建资源：
+项目默认面向 **Cloudflare Workers Builds（Git 自动构建发布）** 配置：[wrangler.jsonc](./wrangler.jsonc) 启用了 `"keep_vars": true`，并省略了账号/实例专属的 `account_id`、`routes`、`vars` 和 D1 `database_id`，避免向公开仓库提交个人域名或资源 ID，同时防止 CI 发布覆盖 Cloudflare 控制台中的自定义域名与运行期环境变量。
+
+### 首次准备资源与配置
+
+1. 创建 D1 数据库与 R2 存储桶（均名为 `trace-atlas`）：
 
    ```sh
    pnpm exec wrangler login
@@ -46,27 +50,44 @@ curl 'http://localhost:5173/cdn-cgi/local/scheduled?format=json'
    pnpm exec wrangler r2 bucket create trace-atlas
    ```
 
-2. 在 `wrangler.jsonc` 中将 `database_id` 占位值替换为真实 D1 ID。设置正式 HTTPS `APP_ORIGIN` 和对应的 `RP_ID`，例如 `https://atlas.example.com` 与 `atlas.example.com`。需要自定义域名时添加：
+2. 在 Cloudflare 控制台对应 Worker 中配置运行期参数：
+   - **Settings → Domains & Routes**：绑定自定义域名（例如 `atlas.example.com`），不要写入公开仓库的 `wrangler.jsonc`。
+   - **Settings → Variables and Secrets**：
+     - 明文环境变量（Text）：`APP_ORIGIN`（如 `https://atlas.example.com`）与 `RP_ID`（如 `atlas.example.com`）。先确定正式域名再绑定 Passkey；不同 RP ID 的 Passkey 不能互换。
+     - 密钥（Secret）：`ADMIN_BOOTSTRAP_TOKEN`（至少 32 位随机字符）与 `CONFIG_ENCRYPTION_KEY`（64 位十六进制随机字符串），也可通过命令行设置：
 
-   ```json
-   "routes": [{ "pattern": "atlas.example.com", "custom_domain": true }]
-   ```
+       ```sh
+       pnpm exec wrangler secret put ADMIN_BOOTSTRAP_TOKEN
+       pnpm exec wrangler secret put CONFIG_ENCRYPTION_KEY
+       ```
 
-   先确定正式域名再绑定 Passkey。不同 RP ID 的 Passkey 不能互换。`workers.dev` 地址也可以作为正式地址，但 Origin 与 RP ID 必须准确匹配。
+### Workers Builds（CI 自动构建发布）
 
-3. 设置两个独立的随机 Secret。`CONFIG_ENCRYPTION_KEY` 必须是 64 位十六进制字符串；初始化口令至少 32 个字符。
+在 Cloudflare 控制台进入 Worker 的 **Settings → Build** 连接 GitHub 仓库后，按以下方式配置：
 
-   ```sh
-   pnpm exec wrangler secret put ADMIN_BOOTSTRAP_TOKEN
-   pnpm exec wrangler secret put CONFIG_ENCRYPTION_KEY
-   pnpm db:migrate:remote
-   pnpm run deploy
-   ```
+- **Production branch**：`main`
+- **Build command**：`pnpm run build`
+- **Deploy command**：`pnpm run deploy:ci`（依次执行 `pnpm db:migrate:remote` 与 `wrangler deploy`；若希望手动执行数据库迁移，可改为 `pnpm exec wrangler deploy`）
+- **Non-production branch builds**：建议关闭，避免未合并分支共享生产 D1 或误触发迁移。
+- **API Token 权限**：Workers Builds 默认生成的 Token 不包含 D1 权限。因为 `wrangler.jsonc` 省略了 `database_id` 且部署包含远程迁移，需要在 **My Profile → API Tokens** 中为该 Build Token（或新建 User API Token 并在 Build 设置中选用）补充 **Account → D1 → Edit** 权限。
 
-4. 在正式域名 `/admin` 绑定 Passkey。首次绑定后，普通初始化入口即使持有原口令也无法再使用。
-5. 后台填写坚果云账号、应用密码、实际 `Sync` 路径，先测试连接，再保存并开始同步。
+仓库根目录的 `.node-version` 已固定 Node.js 22，与 GitHub Actions 保持一致。每次推送到 `main` 后，Workers Builds 会自动构建并发布，同时保留控制台中配置的自定义域名、明文环境变量与 Secret。
 
-R2 不需要开启公共访问。原始文件不提供公共下载接口，展示数据由 Worker 按已发布版本提供。项目未配置自动部署，也不会在测试时访问生产数据库。
+### 手动部署与初始化
+
+若在本机手动执行迁移和发布，登录 Wrangler 后直接运行：
+
+```sh
+pnpm db:migrate:remote
+pnpm run deploy
+```
+
+完成首次发布后：
+
+1. 在正式域名 `/admin` 绑定 Passkey。首次绑定后，普通初始化入口即使持有原口令也无法再使用。
+2. 后台填写坚果云账号、应用密码、实际 `Sync` 路径，先测试连接，再保存并开始同步。
+
+R2 不需要开启公共访问。原始文件不提供公共下载接口，展示数据由 Worker 按已发布版本提供。测试均使用隔离的本地运行时，不会访问生产数据库。
 
 ### 坚果云配置
 
