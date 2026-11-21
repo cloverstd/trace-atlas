@@ -1,0 +1,5 @@
+# PUBLIC TEST VALUES ONLY. This environment must never be deployed.
+APP_ORIGIN=http://localhost:5174
+RP_ID=localhost
+ADMIN_BOOTSTRAP_TOKEN=test-only-bootstrap-token-with-more-than-32-characters
+CONFIG_ENCRYPTION_KEY=1111111111111111111111111111111111111111111111111111111111111111
