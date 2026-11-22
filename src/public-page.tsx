@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Compass, Footprints, Clock3, X, Globe2, ChevronUp } from 'lucide-react';
-import { Brand } from './components/brand';
+import { Compass } from 'lucide-react';
+import { Brand } from '@/components/brand';
+import { NoticeToast } from '@/components/notice-toast';
+import { EmptyMapCard } from '@/components/public/empty-map-card';
+import { ExplorationDock } from '@/components/public/exploration-dock';
 import { MapView } from './map/map-view';
 import { api } from './lib/api';
-import { area, dateTime } from './lib/utils';
 import type { MapManifest } from '../shared/types';
+
 export default function PublicPage() {
   const [manifest, setManifest] = useState<MapManifest | null>(null),
     [fetched, setFetched] = useState(false),
@@ -34,85 +37,27 @@ export default function PublicPage() {
     };
   }, []);
   return (
-    <main className="public-page">
+    <main className="public-page relative h-dvh min-h-[480px] overflow-hidden overscroll-none bg-[#181b23]">
       <MapView manifest={manifest} onError={reportError} />
-      <header className="public-header">
-        <Brand />
+      <header className="pointer-events-none absolute inset-x-3.5 top-[max(14px,env(safe-area-inset-top))] z-10 flex items-center justify-between md:inset-x-6 md:top-6">
+        <Brand variant="floating" tone="dark" className="pointer-events-auto" />
       </header>
-      {fetched && !manifest && !error && (
-        <div className="empty-map">
-          <div className="empty-orbit">
-            <Globe2 size={40} strokeWidth={1} />
-            <span />
-          </div>
-          <h2>世界很大，足迹即将点亮</h2>
-          <p>
-            旅程的故事正在准备，
-            <br />
-            走过的地方会在地图上显现。
-          </p>
-        </div>
-      )}
+      {fetched && !manifest && !error && <EmptyMapCard />}
       {!fetched && (
-        <div className="initial-loading" role="status">
-          <Compass className="spin" />
+        <div
+          className="atlas-hud-glass absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2.5 rounded-full px-4 py-2.5 text-sm font-medium whitespace-nowrap text-[#e2e4ec]"
+          role="status"
+        >
+          <Compass size={17} className="spin text-[#e59a3c]" aria-hidden="true" />
           正在寻找足迹…
         </div>
       )}
-      <footer className="exploration-dock">
-        <div
-          id="exploration-details"
-          className={`exploration-collapse${showStats ? ' is-open' : ''}`}
-          aria-hidden={!showStats}
-          inert={!showStats}
-        >
-          <div className="exploration-clip">
-            <div className="exploration-panel">
-              <div className="exploration-stat">
-                <span className="stat-icon">
-                  <Footprints size={19} />
-                </span>
-                <div>
-                  <span className="stat-label">
-                    已探索面积 <span className="estimated">估算</span>
-                  </span>
-                  <strong>
-                    {manifest ? area(manifest.areaM2) : '—'} <small>km²</small>
-                  </strong>
-                </div>
-              </div>
-              <span className="stat-divider" />
-              <div className="exploration-update">
-                <Clock3 size={16} />
-                <div>
-                  <span className="stat-label">数据更新时间</span>
-                  <p>{manifest ? dateTime(manifest.updatedAt) : '暂无足迹'}</p>
-                </div>
-              </div>
-              <span className="journey-note">让走过的路，留下光。</span>
-            </div>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="exploration-toggle"
-          aria-expanded={showStats}
-          aria-controls="exploration-details"
-          onClick={() => setShowStats(!showStats)}
-        >
-          <Footprints size={17} />
-          探索概览
-          <ChevronUp size={16} className={showStats ? 'is-open' : ''} />
-        </button>
-      </footer>
-      {error && (
-        <div className="notice" role="alert">
-          <span>{error}</span>
-          <button onClick={() => setError('')} aria-label="关闭提示">
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      <ExplorationDock
+        manifest={manifest}
+        open={showStats}
+        onToggle={() => setShowStats((v) => !v)}
+      />
+      {error && <NoticeToast text={error} ok={false} theme="dark" onDismiss={() => setError('')} />}
     </main>
   );
 }

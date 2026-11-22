@@ -6,7 +6,9 @@ import type { MapManifest, FogTile, TileOverview } from '../../shared/types';
 import type { View, RenderMessage } from './types';
 import { tileVisible } from './geometry';
 import { Button } from '@/components/ui/button';
-import { Plus, Minus, Scan, Layers, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import { MapControls } from './map-controls';
+
 export function MapView({
   manifest,
   onError,
@@ -328,100 +330,47 @@ export function MapView({
   return (
     <>
       <div ref={container} className="map-canvas" aria-label="世界迷雾探索地图" />
-      <div className="map-controls">
-        <div className="control-stack">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="放大地图"
-            onClick={() => mapRef.current?.zoomIn()}
-          >
-            <Plus />
-          </Button>
-          <span />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="缩小地图"
-            onClick={() => mapRef.current?.zoomOut()}
-          >
-            <Minus />
-          </Button>
-        </div>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="回到探索范围"
-          disabled={!manifest?.bounds}
-          onClick={fit}
-        >
-          <Scan />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="地图显示设置"
-          aria-expanded={showLayers}
-          onClick={() => setShowLayers(!showLayers)}
-        >
-          <Layers />
-        </Button>
-        {showLayers && (
-          <div className="layer-panel">
-            <label htmlFor="map-provider">底图</label>
-            <select
-              id="map-provider"
-              value={choice}
-              onChange={(e) => choose(e.target.value as MapChoice)}
-            >
-              <option value="auto">自动选择</option>
-              <option value="openfreemap">OpenFreeMap</option>
-              <option value="tencent" disabled={!tencentKey}>
-                腾讯地图{!tencentKey ? '（暂不可用）' : ''}
-              </option>
-            </select>
-            <small>当前：{provider === 'tencent' ? '腾讯地图' : 'OpenFreeMap'}</small>
-            <label htmlFor="fog-opacity">
-              迷雾浓度 <span>{Math.round(opacity * 100)}%</span>
-            </label>
-            <input
-              id="fog-opacity"
-              type="range"
-              min=".35"
-              max=".95"
-              step=".01"
-              value={opacity}
-              onChange={(e) => setOpacity(Number(e.target.value))}
-            />
-            <label htmlFor="path-width">
-              路径粗细 <span>{['纤细', '标准', '较粗', '粗', '最粗'][pathWidth - 1]}</span>
-            </label>
-            <input
-              id="path-width"
-              type="range"
-              min="1"
-              max="5"
-              step="1"
-              value={pathWidth}
-              aria-valuetext={['纤细', '标准', '较粗', '粗', '最粗'][pathWidth - 1]}
-              onChange={(e) => setPathWidth(Number(e.target.value))}
-            />
-          </div>
-        )}
-      </div>
+      <MapControls
+        canFit={!!manifest?.bounds}
+        onFit={fit}
+        onZoomIn={() => mapRef.current?.zoomIn()}
+        onZoomOut={() => mapRef.current?.zoomOut()}
+        showLayers={showLayers}
+        onLayersChange={setShowLayers}
+        choice={choice}
+        provider={provider}
+        tencentAvailable={!!tencentKey}
+        onChoose={choose}
+        opacity={opacity}
+        onOpacityChange={setOpacity}
+        pathWidth={pathWidth}
+        onPathWidthChange={setPathWidth}
+      />
       {mapStatus && (
-        <div className="map-connection" role="status">
+        <div
+          className="map-connection atlas-hud-glass-strong absolute top-[calc(max(14px,env(safe-area-inset-top))+64px)] left-1/2 z-20 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border-[#e59a3c]/35 px-3.5 py-2 text-xs font-medium text-[#faf6ef] md:top-6"
+          role="status"
+        >
           <span>{mapStatus}</span>
           {mapStatus.includes('失败') && (
-            <Button variant="ghost" size="sm" onClick={() => choose(choice)}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="relative h-7 min-w-11 rounded-full bg-[#e59a3c] px-2.5 text-xs font-semibold text-[#12141a] after:absolute after:-inset-y-2 after:inset-x-0 hover:bg-[#f0ad52] focus-visible:ring-[#e59a3c] focus-visible:ring-offset-0 md:after:hidden"
+              onClick={() => choose(choice)}
+            >
               重试
             </Button>
           )}
         </div>
       )}
       {loading && (
-        <div className="map-loading" role="status">
-          <RefreshCw className="spin" size={13} />
+        <div
+          className="atlas-hud-glass absolute bottom-[calc(max(36px,env(safe-area-inset-bottom)+24px)+54px)] left-3.5 z-10 flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-medium text-[#d4d7e0] md:bottom-22 md:left-6"
+          role="status"
+        >
+          <RefreshCw aria-hidden="true" className="spin text-[#e59a3c]" size={13} />
           正在加载足迹
         </div>
       )}
