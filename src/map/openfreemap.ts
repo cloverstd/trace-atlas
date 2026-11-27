@@ -7,15 +7,15 @@ import type { Camera, Engine } from './engine';
 maplibregl.setWorkerUrl(mapWorkerUrl);
 export function createOpenFreeMap(
   container: HTMLElement,
-  camera: Camera | undefined,
+  camera: Camera,
   ready: (engine: Engine) => void,
   failure: () => void,
 ): Engine {
   const map = new maplibregl.Map({
     container,
     style: 'https://tiles.openfreemap.org/styles/liberty',
-    center: camera?.center ?? [105, 28],
-    zoom: camera?.zoom ?? 2.5,
+    center: camera.center,
+    zoom: camera.zoom,
     minZoom: 1,
     maxZoom: 19,
     maxPitch: 0,

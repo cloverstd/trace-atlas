@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 async function offlineBasemap(page: Page) {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.route('https://tiles.openfreemap.org/**', (route) =>
     route.fulfill({
       json: {
@@ -86,11 +87,11 @@ test('renders a precise explored patch without authentication', async ({ page })
   page.on('pageerror', (error) => errors.push(error.message));
   const loaded = page.waitForResponse((response) => response.url().includes(`/tile/${tileId}`));
   await page.goto('/');
+  await page.getByLabel('回到探索范围').click();
   await loaded;
   await page.getByRole('button', { name: '探索概览' }).click();
   await expect(page.getByText('0.1', { exact: false }).first()).toBeVisible();
   await expect(page.getByText('正在加载足迹')).not.toBeVisible({ timeout: 15000 });
-  await page.getByLabel('回到探索范围').click();
   await page.waitForTimeout(1000);
   const shot = await page.screenshot({ path: 'test-results/public-data.png' });
   const png = PNG.sync.read(shot);

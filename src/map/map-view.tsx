@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { MapControls } from './map-controls';
 
+const WUHAN_CAMERA: Camera = { center: [114.3, 30.59], zoom: 10 };
+
 export function MapView({
   manifest,
   onError,
@@ -27,16 +29,20 @@ export function MapView({
       return 'auto';
     }
   });
-  const [provider, setProvider] = useState<Provider>(
-    choice === 'tencent' ? 'tencent' : 'openfreemap',
-  );
   const [tencentKey, setTencentKey] = useState<string | null>(null);
+  const [openMapFailed, setOpenMapFailed] = useState(false);
+  const provider: Provider =
+    choice === 'tencent' || (choice === 'auto' && openMapFailed && tencentKey)
+      ? 'tencent'
+      : 'openfreemap';
+  // Resolving the fallback key must not recreate a running OpenFreeMap instance.
+  const providerKey = provider === 'tencent' ? tencentKey : null;
   const [mapStatus, setMapStatus] = useState('正在加载地图');
   const [attempt, setAttempt] = useState(0);
-  const camera = useRef<Camera | undefined>(undefined);
+  const camera = useRef(WUHAN_CAMERA);
   const choose = (next: MapChoice) => {
     setChoice(next);
-    setProvider(next === 'tencent' ? 'tencent' : 'openfreemap');
+    setOpenMapFailed(false);
     setAttempt((a) => a + 1);
     try {
       localStorage.setItem('trace-atlas-map', next);
@@ -89,12 +95,12 @@ export function MapView({
     }
     mapRef.current?.fire('move');
   }, [pathWidth]);
-  const fitted = useRef(false);
   errorRef.current = onError;
   useEffect(() => {
-    if (!container.current || tencentKey === null) return;
+    if (!container.current || (provider === 'tencent' && providerKey === null)) return;
     let disposed = false,
       engineReady = false,
+      failed = false,
       engine: Engine | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setReady(false);
@@ -105,24 +111,20 @@ export function MapView({
     const success = (loaded: Engine) => {
       if (disposed || engineReady) return;
       engineReady = true;
+      failed = false;
       clearTimeout(timer);
+      if (provider === 'openfreemap') setOpenMapFailed(false);
       mapRef.current = loaded;
       layerRef.current = loaded.layer;
-      fitted.current = !!camera.current;
       setMapStatus('');
       setReady(true);
     };
-    let failed = false;
     const failure = () => {
       if (disposed || failed) return;
       failed = true;
       clearTimeout(timer);
-      if (choice === 'auto' && provider === 'openfreemap' && tencentKey) {
-        setMapStatus('正在切换到腾讯地图');
-        setProvider('tencent');
-      } else {
-        setMapStatus('地图加载失败，可重试或切换地图');
-      }
+      if (choice === 'auto' && provider === 'openfreemap') setOpenMapFailed(true);
+      setMapStatus('地图加载失败，可重试或切换地图');
     };
     if (provider === 'openfreemap') {
       // Readiness checks the actual style and visible map resources, not a server-side ping.
@@ -133,9 +135,9 @@ export function MapView({
       } catch {
         failure();
       }
-    } else if (tencentKey) {
+    } else if (providerKey) {
       timer = setTimeout(failure, 16000);
-      void loadTencent(tencentKey)
+      void loadTencent(providerKey)
         .then((sdk) => {
           if (disposed) return;
           engine = createTencent(host, sdk, camera.current, () => {
@@ -144,7 +146,6 @@ export function MapView({
         })
         .catch(failure);
     } else {
-      setProvider('openfreemap');
       setChoice('auto');
     }
     return () => {
@@ -162,7 +163,7 @@ export function MapView({
       mapRef.current = null;
       layerRef.current = null;
     };
-  }, [provider, choice, tencentKey, attempt]);
+  }, [provider, choice, providerKey, attempt]);
   useEffect(() => {
     if (layerRef.current) {
       layerRef.current.opacity = opacity;
@@ -270,16 +271,6 @@ export function MapView({
     worker.onerror = () => errorRef.current('迷雾渲染失败，请刷新页面。');
     map.on('move', draw);
     map.on('resize', draw);
-    if (manifest?.bounds && !fitted.current) {
-      fitted.current = true;
-      map.fitBounds(
-        [
-          [manifest.bounds[0], manifest.bounds[1]],
-          [manifest.bounds[2], manifest.bounds[3]],
-        ],
-        { padding: { top: 130, bottom: 140, left: 55, right: 55 }, maxZoom: 13, duration: 0 },
-      );
-    }
     void (async () => {
       if (manifest) {
         setLoading(true);
@@ -315,7 +306,7 @@ export function MapView({
       map.off('resize', draw);
       layer.invalidate();
     };
-  }, [ready, manifest?.version, provider, choice, tencentKey, attempt]);
+  }, [ready, manifest?.version, provider, choice, providerKey, attempt]);
   const fit = () => {
     const b = manifest?.bounds;
     if (b)
@@ -327,11 +318,12 @@ export function MapView({
         { padding: { top: 130, bottom: 140, left: 55, right: 55 }, maxZoom: 13 },
       );
   };
+  const status = openMapFailed && tencentKey === null ? '正在连接备用地图' : mapStatus;
   return (
     <>
       <div ref={container} className="map-canvas" aria-label="世界迷雾探索地图" />
       <MapControls
-        canFit={!!manifest?.bounds}
+        canFit={ready && !!manifest?.bounds}
         onFit={fit}
         onZoomIn={() => mapRef.current?.zoomIn()}
         onZoomOut={() => mapRef.current?.zoomOut()}
@@ -346,13 +338,13 @@ export function MapView({
         pathWidth={pathWidth}
         onPathWidthChange={setPathWidth}
       />
-      {mapStatus && (
+      {status && (
         <div
           className="map-connection atlas-hud-glass-strong absolute top-[calc(max(14px,env(safe-area-inset-top))+64px)] left-1/2 z-20 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border-[#e59a3c]/35 px-3.5 py-2 text-xs font-medium text-[#faf6ef] md:top-6"
           role="status"
         >
-          <span>{mapStatus}</span>
-          {mapStatus.includes('失败') && (
+          <span>{status}</span>
+          {status.includes('失败') && (
             <Button
               type="button"
               variant="secondary"

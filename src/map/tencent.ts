@@ -65,7 +65,7 @@ export function loadTencent(key: string): Promise<SDK> {
 export function createTencent(
   container: HTMLElement,
   sdk: SDK,
-  camera: Camera | undefined,
+  camera: Camera,
   onLoad: () => void,
 ): Engine {
   const point = (lng: number, lat: number) => {
@@ -73,8 +73,8 @@ export function createTencent(
     return new sdk.LatLng(p[1], p[0]);
   };
   const map = new sdk.Map(container, {
-    center: point(...(camera?.center ?? [105, 28])),
-    zoom: (camera?.zoom ?? 2.5) + 1,
+    center: point(...camera.center),
+    zoom: camera.zoom + 1,
     minZoom: 3,
     maxZoom: 20,
     viewMode: '2D',

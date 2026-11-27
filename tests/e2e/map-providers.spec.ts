@@ -7,7 +7,7 @@ window.TMap={
  LatLng:class{constructor(lat,lng){this.lat=lat;this.lng=lng}getLat(){return this.lat}getLng(){return this.lng}},
  LatLngBounds:class{constructor(sw,ne){this.sw=sw;this.ne=ne}},
  Map:class{
- constructor(el,options){this.el=el;this.center=options.center;this.zoom=options.zoom;this.events={};el.style.background='#b6cfb1';setTimeout(()=>this.emit('tilesloaded'),30)}
+ constructor(el,options){this.el=el;this.center=options.center;this.zoom=options.zoom;this.events={};el.dataset.initialCamera=JSON.stringify([this.center.lng,this.center.lat,this.zoom]);el.style.background='#b6cfb1';setTimeout(()=>this.emit('tilesloaded'),30)}
  getCenter(){return this.center}getZoom(){return this.zoom}setZoom(z){this.zoom=z;this.emit('bounds_changed')}
  xy(p){return [(p.lng+180)/360,(1-Math.log(Math.tan(Math.PI/4+p.lat*Math.PI/360))/Math.PI)/2]}
  projectToContainer(p){const a=this.xy(p),b=this.xy(this.center),w=256*2**this.zoom;return {x:(a[0]-b[0])*w+this.el.clientWidth/2,y:(a[1]-b[1])*w+this.el.clientHeight/2}}
@@ -33,10 +33,30 @@ async function setup(page: Page) {
 async function settings(page: Page) {
   await page.getByLabel('地图显示设置').click();
 }
+async function holdMapConfig(page: Page) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/public/map-config', async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  return release;
+}
+async function expectWuhanCamera(page: Page) {
+  const camera = await page.locator('.map-engine').getAttribute('data-initial-camera');
+  const [lng, lat, zoom] = JSON.parse(camera!);
+  // Tencent receives the GCJ-02 equivalent of the WGS84 camera and one extra zoom level.
+  expect(lng).toBeCloseTo(114.305, 2);
+  expect(lat).toBeCloseTo(30.588, 2);
+  expect(zoom).toBeCloseTo(11);
+}
 test('healthy OpenFreeMap is retained and switching preserves display preferences', async ({
   page,
 }) => {
   await setup(page);
+  const releaseConfig = await holdMapConfig(page);
   await page.route('https://tiles.openfreemap.org/**', (r) => r.fulfill({ json: style }));
   let tencentRequests = 0;
   page.on('request', (r) => {
@@ -45,12 +65,17 @@ test('healthy OpenFreeMap is retained and switching preserves display preference
   await page.goto('/');
   await expect(page.locator('.maplibregl-canvas')).toBeVisible();
   await expect(page.locator('.map-connection')).toHaveCount(0);
+  const originalCanvas = await page.locator('.maplibregl-canvas').elementHandle();
+  releaseConfig();
   expect(tencentRequests).toBe(0);
   await settings(page);
+  await expect(page.locator('option[value=tencent]')).toBeEnabled();
+  expect(await originalCanvas!.evaluate((el) => el.isConnected)).toBe(true);
   await page.getByLabel('路径粗细').fill('4');
   await page.getByLabel('迷雾浓度').fill('0.55');
   await page.getByLabel('底图', { exact: true }).selectOption('tencent');
   await expect(page.locator('.tencent-fog')).toBeVisible();
+  await expectWuhanCamera(page);
   await expect(page.locator('.map-connection')).toHaveCount(0);
   await expect(page.getByLabel('路径粗细')).toHaveValue('4');
   await expect(page.getByLabel('迷雾浓度')).toHaveValue('0.55');
@@ -65,10 +90,13 @@ test('healthy OpenFreeMap is retained and switching preserves display preference
 });
 test('network failure falls back once without changing automatic preference', async ({ page }) => {
   await setup(page);
+  const releaseConfig = await holdMapConfig(page);
   await page.route('https://tiles.openfreemap.org/**', (r) => r.abort());
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
+  await expect(page.getByText('正在连接备用地图')).toBeVisible();
+  releaseConfig();
   await expect(page.locator('.tencent-fog')).toBeVisible();
   await settings(page);
   await expect(page.getByLabel('底图', { exact: true })).toHaveValue('auto');
@@ -162,6 +190,10 @@ test('Tencent projects a Chinese explored patch and redraws it at higher zoom', 
         ctx.getImageData(0, 0, 1, 1).data[3],
       ];
     });
+  await expect(page.locator('.tencent-fog')).toBeVisible();
+  await expectWuhanCamera(page);
+  await expect.poll(alpha).toEqual([255, 255]);
+  await page.getByLabel('回到探索范围').click();
   await expect.poll(alpha).toEqual([0, 255]);
   await page.getByLabel('放大地图').click();
   await expect.poll(alpha).toEqual([0, 255]);
